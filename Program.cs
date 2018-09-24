@@ -15,7 +15,11 @@ namespace RpiNrf
 
             var spi = Pi.Spi.Channel0;
 
-            spi.Write(new byte[] {1,2,3});
+            var nrf = new NRFDriver(spi);
+
+            var status = nrf.ReadStatus();
+
+            Console.WriteLine($"Status = {status:X}");
         }
     }
 }
