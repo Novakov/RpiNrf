@@ -4,4 +4,8 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp2.1</TargetFramework>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Unosquare.Raspberry.IO" Version="0.17.1" />
+  </ItemGroup>
 </Project>
