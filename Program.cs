@@ -11,18 +11,11 @@ namespace RpiNrf
         {
             Console.WriteLine("Hello World!2");
 
-            var pin = Pi.Gpio[WiringPiPin.Pin01];
+            Pi.Spi.Channel0Frequency = 2 * 1000 * 1000;
 
-            pin.PinMode = GpioPinDriveMode.Output;
+            var spi = Pi.Spi.Channel0;
 
-            while(true)
-            {
-                Console.WriteLine("loop");
-                pin.Write(true);
-                Thread.Sleep(500);
-                pin.Write(false);
-                Thread.Sleep(500);
-            }
+            spi.Write(new byte[] {1,2,3});
         }
     }
 }
