@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Unosquare.RaspberryIO.Gpio;
@@ -9,13 +10,26 @@ namespace RpiNrf
     {
         private readonly SpiChannel spi;
         private readonly GpioPin cePin;
+        private readonly GpioPin irqPin;
+        private readonly AutoResetEvent irqEvent;
 
-        public NRFDriver(SpiChannel spi, GpioPin cePin)
+        private const byte StatusPipeShift = 1;
+        private const byte StatusPipeMask = 0b111 << StatusPipeShift;
+
+        public NRFDriver(SpiChannel spi, GpioPin cePin, GpioPin irqPin)
         {
             this.spi = spi;
             this.cePin = cePin;
+            this.irqPin = irqPin;
             this.cePin.PinMode = GpioPinDriveMode.Output;
             this.cePin.Write(false);
+
+            this.irqPin.PinMode = GpioPinDriveMode.Input;
+            this.irqPin.InputPullMode = GpioPinResistorPullMode.PullUp;
+
+            this.irqEvent = new AutoResetEvent(false);
+            this.irqPin.RegisterInterruptCallback(EdgeDetection.FallingEdge, () => this.irqEvent.Set());
+
         }
 
         public byte ReadStatus()
@@ -23,12 +37,19 @@ namespace RpiNrf
             return ReadRegister(Register.STATUS, 1)[0];
         }
 
+        public byte ReadFIFOStatus() => ReadRegister(Register.FIFO_STATUS, 1)[0];
+
         public byte ObserveTX()
         {
             return ReadRegister(Register.OBSERVE_TX, 1)[0];
         }
 
-        public void Transmit(byte[] address, byte[] data)
+        public void EnableReceiving()
+        {
+            this.cePin.Write(true);
+        }
+
+        public byte Transmit(byte[] address, byte[] data)
         {
             {
                 var config = (ConfigRegister)ReadRegister(Register.CONFIG, 1)[0];
@@ -44,22 +65,64 @@ namespace RpiNrf
             SendCommand(Command.WriteTXPayload, data);
 
             // CE high
+            var sw = new Stopwatch();
+            sw.Start();
             this.cePin.Write(true);
             // sleep
-            Thread.Sleep(1000);
+            // Thread.Sleep(1000);
+            this.irqPin.WaitForValue(GpioPinValue.Low, 10000);
             // CE low
             this.cePin.Write(false);
+            sw.Stop();
+            Console.WriteLine(sw.Elapsed);
 
             {
                 var config = (ConfigRegister)ReadRegister(Register.CONFIG, 1)[0];
                 config = config | ConfigRegister.PRIM_RX;
                 WriteRegister(Register.CONFIG, (byte)config);
             }
+
+            var st = ReadStatus();
+            WriteRegister(Register.STATUS,  (1 << 5) | (1 << 4));
+
+            return st;
         }
 
-        internal void EnableRXMode()
+        public (int pipe, byte[] data)? ReceiveFrame()
         {
-            this.cePin.Write(true);
+            var currentFrame = ReadRXFrame();
+
+            if(currentFrame != null) {
+                return currentFrame;
+            }
+            
+            WriteRegister(Register.STATUS, 1 << 6);
+
+            this.irqEvent.WaitOne();
+
+            return ReadRXFrame();
+        }
+
+        private (int pipe, byte[] data)? ReadRXFrame()
+        {
+            var fifo = ReadFIFOStatus();
+
+            Console.WriteLine($"FIFO=0x{fifo:X2}");
+
+            if ((fifo & (1 << 0)) == 1) 
+            {
+                return null;
+            }
+
+            var st = ReadStatus();
+            Console.WriteLine($"ST={st}");
+            var filledPipe = (st & StatusPipeMask) >> StatusPipeShift;
+
+            var data = SendCommandWithResponse(Command.R_RX_PAYLOAD, 32);
+
+            WriteRegister(Register.STATUS, 1 << 6);
+
+            return (filledPipe, data);
         }
 
         internal void EnableCarrier()
@@ -74,9 +137,10 @@ namespace RpiNrf
             this.cePin.Write(false);
         }
 
-        public void FlushTX()
+        public void Flush()
         {
             SendCommand(Command.FlushTX);
+            SendCommand(Command.FlushRX);
             var s = ReadStatus();
             WriteRegister(Register.STATUS, s);
         }
@@ -112,7 +176,7 @@ namespace RpiNrf
             }
             else
             {
-                WriteRegister((Register)((byte)Register.RX_ADDR_P0 + pipe), address.Last());
+                WriteRegister((Register)((byte)Register.RX_ADDR_P0 + pipe), address.First());
             }
 
             WriteRegister((Register)((byte)Register.RX_PW_P0 + pipe), 32);
@@ -146,6 +210,17 @@ namespace RpiNrf
             spi.Write(command);
         }
 
+        private byte[] SendCommandWithResponse(Command cmd, int responseSize, params byte[] data)
+        {
+            var command = new byte[1 + Math.Max(data.Length, responseSize)];
+            command[0] = (byte)cmd;
+            data.CopyTo(command, 1);
+
+            var response = spi.SendReceive(command);
+
+            return response.Skip(1).ToArray();
+        }
+
         private enum Register: byte
         {
             STATUS = 0x07,
@@ -159,13 +234,16 @@ namespace RpiNrf
             EN_RXADDR = 0x2,
             RX_ADDR_P0 = 0x0A,
             OBSERVE_TX = 0x8,
-            RX_PW_P0 = 0x11
+            RX_PW_P0 = 0x11,
+            FIFO_STATUS = 0x17
         }
 
         private enum Command: byte
         {
             WriteTXPayload = 0b10100000,
-            FlushTX = 0b11100001
+            R_RX_PAYLOAD = 0b01100001,
+            FlushTX = 0b11100001,
+            FlushRX = 0b11100010,
         }
 
         [Flags]

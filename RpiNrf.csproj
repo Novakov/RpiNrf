@@ -5,6 +5,7 @@
     <TargetFramework>netcoreapp2.1</TargetFramework>
     <RuntimeIdentifiers>linux-arm</RuntimeIdentifiers>
     <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
