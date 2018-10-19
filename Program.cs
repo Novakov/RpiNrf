@@ -52,7 +52,7 @@ namespace RpiNrf
                 return;
             }
 
-            Console.WriteLine("Hello World!2");
+            Console.WriteLine($"NRF role {role} om channel {channel}");
 
             var channels = new Dictionary<int, ChannelDef>
             {
@@ -73,30 +73,69 @@ namespace RpiNrf
             Pi.Spi.Channel0Frequency = 2 * 1000 * 1000;
             Pi.Spi.Channel1Frequency = 2 * 1000 * 1000;
 
-            var nrf1 = new NRFDriver(channels[0].Spi, channels[0].ChipEnable, channels[0].Irq);
-            var nrf2 = new NRFDriver(channels[1].Spi, channels[1].ChipEnable, channels[1].Irq);
+            var nrf = new NRFDriver(channels[channel].Spi, channels[channel].ChipEnable, channels[channel].Irq);
 
-            nrf1.PowerDown();
-            nrf2.PowerDown();
+            nrf.PowerDown();
 
             Thread.Sleep(100);
 
-            nrf1.PowerUp();
-            nrf2.PowerUp();
+            nrf.PowerUp();
 
             Thread.Sleep(100);
             
-            nrf1.Setup();
-            nrf2.Setup();
+            nrf.Setup();
 
-            nrf2.EnableRX(1, Address2);
-            nrf2.EnableRX(3, PoisonAddress);
+            Console.WriteLine($"Module status = 0x{nrf.ReadStatus():X}");
+           
+            if (role == Role.RX)
+            {
+                RunReceiver(nrf);
+            }
+            else if(role == Role.TX)
+            {
+                await RunTransmitter(nrf);
+            }
+        }
+        private static void RunReceiver(NRFDriver nrf)
+        {
+            nrf.EnableRX(1, Address2);
+            nrf.EnableRX(3, PoisonAddress);
 
-            var txTask = Task.Run(async () => await RunTransmitter(nrf1));
+            nrf.EnableReceiving();
 
-            var rxTask = Task.Run(() => RunReceiver(nrf2));
+            while (true)
+            {
+                var (pipe, frame) = nrf.ReceiveFrame().Value;
 
-            await Task.WhenAll(new[] { txTask, rxTask });
+                Console.WriteLine($"Received {AsHex(frame)} bytes on pipe {pipe}");
+
+                if (pipe == 3)
+                {
+                    Console.WriteLine("Poison detected");
+                    break;
+                }
+            }
+        }
+
+        private static async Task RunTransmitter(NRFDriver nrf)
+        {
+            var data = Enumerable.Range(100, 32).Select(x => (byte)x).ToArray();
+
+            for (int i = 0; i < 20; i++)
+            {
+                Inc(data);
+                nrf.Transmit(Address2, data);
+                Console.WriteLine($"Status after transmit = 0x{nrf.ReadStatus():X}");
+                await Task.Delay(250);
+            }
+
+            data[0] = 0xDE;
+            data[1] = 0xAD;
+            data[2] = 0xBE;
+            data[3] = 0xEF;
+            nrf.Transmit(PoisonAddress, data);
+            
+            Console.WriteLine($"Sending done");
         }
 
         private static void Usage()
@@ -120,45 +159,5 @@ namespace RpiNrf
             }
         }
 
-        private static void RunReceiver(NRFDriver nrf2)
-        {
-            nrf2.EnableReceiving();
-
-            while (true)
-            {
-                Console.WriteLine($"Status2 = {nrf2.ReadStatus():X}");
-                var (pipe, frame) = nrf2.ReceiveFrame().Value;
-
-                Console.WriteLine($"Received {AsHex(frame)} bytes on pipe {pipe}");
-
-                if (pipe == 3)
-                {
-                    Console.WriteLine("Poison detected");
-                    break;
-                }
-            }
-        }
-
-        private static async Task RunTransmitter(NRFDriver nrf)
-        {
-            var data = Enumerable.Range(100, 32).Select(x => (byte)x).ToArray();
-            Console.WriteLine("Waiting before send");
-            await Task.Delay(2000);
-            Console.WriteLine("Sending");
-            for (int i = 0; i < 20; i++)
-            {
-                Inc(data);
-                nrf.Transmit(Address2, data);
-                Console.WriteLine($"Status1 = {nrf.ReadStatus():X}");
-                await Task.Delay(250);
-            }
-
-            data[0] = 0xDE;
-            data[1] = 0xAD;
-            data[2] = 0xBE;
-            data[3] = 0xEF;
-            var st = nrf.Transmit(PoisonAddress, data);
-            Console.WriteLine($"Sending done 0x{st:X2}");
-        }
     }
 }

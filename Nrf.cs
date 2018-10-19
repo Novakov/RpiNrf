@@ -12,7 +12,6 @@ namespace RpiNrf
         private readonly GpioPin cePin;
         private readonly GpioPin irqPin;
         private readonly AutoResetEvent irqEvent;
-
         private const byte StatusPipeShift = 1;
         private const byte StatusPipeMask = 0b111 << StatusPipeShift;
 
@@ -29,7 +28,6 @@ namespace RpiNrf
 
             this.irqEvent = new AutoResetEvent(false);
             this.irqPin.RegisterInterruptCallback(EdgeDetection.FallingEdge, () => this.irqEvent.Set());
-
         }
 
         public byte ReadStatus()
@@ -51,8 +49,9 @@ namespace RpiNrf
 
         public byte Transmit(byte[] address, byte[] data)
         {
+            ConfigRegister originalConfig;
             {
-                var config = (ConfigRegister)ReadRegister(Register.CONFIG, 1)[0];
+                var config = originalConfig = (ConfigRegister)ReadRegister(Register.CONFIG, 1)[0];
                 config = config & ~ConfigRegister.PRIM_RX;
                 WriteRegister(Register.CONFIG, (byte)config);
             }
@@ -65,22 +64,13 @@ namespace RpiNrf
             SendCommand(Command.WriteTXPayload, data);
 
             // CE high
-            var sw = new Stopwatch();
-            sw.Start();
             this.cePin.Write(true);
-            // sleep
-            // Thread.Sleep(1000);
+            // wait for transmission finish
             this.irqPin.WaitForValue(GpioPinValue.Low, 10000);
             // CE low
             this.cePin.Write(false);
-            sw.Stop();
-            Console.WriteLine(sw.Elapsed);
-
-            {
-                var config = (ConfigRegister)ReadRegister(Register.CONFIG, 1)[0];
-                config = config | ConfigRegister.PRIM_RX;
-                WriteRegister(Register.CONFIG, (byte)config);
-            }
+            
+            WriteRegister(Register.CONFIG, (byte)originalConfig);
 
             var st = ReadStatus();
             WriteRegister(Register.STATUS,  (1 << 5) | (1 << 4));
@@ -107,15 +97,13 @@ namespace RpiNrf
         {
             var fifo = ReadFIFOStatus();
 
-            Console.WriteLine($"FIFO=0x{fifo:X2}");
-
             if ((fifo & (1 << 0)) == 1) 
             {
                 return null;
             }
 
             var st = ReadStatus();
-            Console.WriteLine($"ST={st}");
+
             var filledPipe = (st & StatusPipeMask) >> StatusPipeShift;
 
             var data = SendCommandWithResponse(Command.R_RX_PAYLOAD, 32);
