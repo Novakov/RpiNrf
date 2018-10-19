@@ -182,6 +182,16 @@ namespace RpiNrf
             WriteRegister((Register)((byte)Register.RX_PW_P0 + pipe), 32);
         }
 
+        public void PowerDown()
+        {
+            WriteRegister(Register.CONFIG, 0);
+        }
+
+        public void PowerUp()
+        {
+            WriteRegister(Register.CONFIG, 1 << 1);
+        }
+
         private byte[] ReadRegister(Register register, int size)
         {
             var command = new byte[1 + size];
