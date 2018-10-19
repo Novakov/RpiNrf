@@ -8,6 +8,12 @@ using Unosquare.RaspberryIO.Gpio;
 
 namespace RpiNrf
 {
+    enum Role
+    {
+        RX,
+        TX
+    }
+
     class Program
     {
         static readonly byte[] Address1 = { 0xC3, 0xC3, 0xC3 };
@@ -16,6 +22,36 @@ namespace RpiNrf
 
         static async Task Main(string[] args)
         {
+            if (args.Length != 2)
+            {
+                Usage();
+                return;
+            }
+
+            int channel;
+            if (!int.TryParse(args[0], out channel))
+            {
+                Usage();
+                return;
+            }
+
+            if (channel != 0 && channel != 1)
+            {
+                Usage();
+                return;
+            }            
+
+            Role role;
+            if(Enum.TryParse(typeof(Role), args[1], true, out var roleObj))
+            {
+               role = (Role)roleObj; 
+            }
+            else
+            {
+                Usage();
+                return;
+            }
+
             Console.WriteLine("Hello World!2");
 
             var channels = new Dictionary<int, ChannelDef>
@@ -53,7 +89,6 @@ namespace RpiNrf
             nrf1.Setup();
             nrf2.Setup();
 
-            nrf1.EnableRX(1, Address1);
             nrf2.EnableRX(1, Address2);
             nrf2.EnableRX(3, PoisonAddress);
 
@@ -62,6 +97,14 @@ namespace RpiNrf
             var rxTask = Task.Run(() => RunReceiver(nrf2));
 
             await Task.WhenAll(new[] { txTask, rxTask });
+        }
+
+        private static void Usage()
+        {
+            Console.WriteLine("RpiNrf <channel> <role>");
+            Console.WriteLine();
+            Console.WriteLine("\tchannel\tSPI channel to use (0 or 1)");
+            Console.WriteLine("\rrole\tRole to execute (tx or rx)");
         }
 
         private static string AsHex(byte[] bytes)
