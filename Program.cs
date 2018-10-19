@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,11 +18,27 @@ namespace RpiNrf
         {
             Console.WriteLine("Hello World!2");
 
+            var channels = new Dictionary<int, ChannelDef>
+            {
+                [0] = new ChannelDef
+                {
+                    Spi = Pi.Spi.Channel0,
+                    ChipEnable = Pi.Gpio[WiringPiPin.Pin06],
+                    Irq = Pi.Gpio[WiringPiPin.Pin05]
+                },
+                [1] = new ChannelDef
+                {
+                    Spi = Pi.Spi.Channel1,
+                    ChipEnable = Pi.Gpio[WiringPiPin.Pin26],
+                    Irq = Pi.Gpio[WiringPiPin.Pin27]
+                }
+            };
+
             Pi.Spi.Channel0Frequency = 2 * 1000 * 1000;
             Pi.Spi.Channel1Frequency = 2 * 1000 * 1000;
 
-            var nrf1 = new NRFDriver(Pi.Spi.Channel0, Pi.Gpio[WiringPiPin.Pin06], Pi.Gpio[WiringPiPin.Pin05]);
-            var nrf2 = new NRFDriver(Pi.Spi.Channel1, Pi.Gpio[WiringPiPin.Pin26], Pi.Gpio[WiringPiPin.Pin27]);
+            var nrf1 = new NRFDriver(channels[0].Spi, channels[0].ChipEnable, channels[0].Irq);
+            var nrf2 = new NRFDriver(channels[1].Spi, channels[1].ChipEnable, channels[1].Irq);
 
             Console.WriteLine($"Status = {nrf1.ReadStatus():X} Status = {nrf2.ReadStatus():X}");
             nrf1.Flush();
