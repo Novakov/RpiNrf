@@ -16,9 +16,7 @@ namespace RpiNrf
 
     class Program
     {
-        static readonly byte[] Address1 = { 0xC3, 0xC3, 0xC3 };
-        static readonly byte[] Address2 = { 0xC4, 0xC3, 0xC3 };
-        static readonly byte[] PoisonAddress = { 0xC5, 0xC3, 0xC3 };
+        static readonly byte[] Address1 = { 0xC4, 0xC3, 0xC3 };
 
         static async Task Main(string[] args)
         {
@@ -52,7 +50,7 @@ namespace RpiNrf
                 return;
             }
 
-            Console.WriteLine($"NRF role {role} om channel {channel}");
+            Console.WriteLine($"NRF role {role} on channel {channel}");
 
             var channels = new Dictionary<int, ChannelDef>
             {
@@ -98,8 +96,7 @@ namespace RpiNrf
         }
         private static void RunReceiver(NRFDriver nrf)
         {
-            nrf.EnableRX(1, Address2);
-            nrf.EnableRX(3, PoisonAddress);
+            nrf.EnableRX(1, Address1);
 
             nrf.EnableReceiving();
 
@@ -108,13 +105,9 @@ namespace RpiNrf
                 var (pipe, frame) = nrf.ReceiveFrame().Value;
 
                 Console.WriteLine($"Received {AsHex(frame)} bytes on pipe {pipe}");
-
-                if (pipe == 3)
-                {
-                    Console.WriteLine("Poison detected");
-                    break;
-                }
             }
+
+            nrf.DisableReceiving();
         }
 
         private static async Task RunTransmitter(NRFDriver nrf)
@@ -124,17 +117,11 @@ namespace RpiNrf
             for (int i = 0; i < 20; i++)
             {
                 Inc(data);
-                nrf.Transmit(Address2, data);
+                nrf.Transmit(Address1, data);
                 Console.WriteLine($"Status after transmit = 0x{nrf.ReadStatus():X}");
                 await Task.Delay(250);
             }
 
-            data[0] = 0xDE;
-            data[1] = 0xAD;
-            data[2] = 0xBE;
-            data[3] = 0xEF;
-            nrf.Transmit(PoisonAddress, data);
-            
             Console.WriteLine($"Sending done");
         }
 

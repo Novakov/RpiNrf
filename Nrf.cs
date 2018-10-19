@@ -47,6 +47,11 @@ namespace RpiNrf
             this.cePin.Write(true);
         }
 
+        public void DisableReceiving()
+        {
+            this.cePin.Write(false);
+        }
+
         public byte Transmit(byte[] address, byte[] data)
         {
             ConfigRegister originalConfig;
@@ -135,12 +140,19 @@ namespace RpiNrf
 
         public void Setup()
         {
+            // Powered up, 2-byte CRC, primary receiver
             WriteRegister(Register.CONFIG, (byte)(ConfigRegister.PWR_UP | ConfigRegister.EN_CRC | ConfigRegister.CRC0 | ConfigRegister.PRIM_RX));
+            // enable 1 data pipe
             WriteRegister(Register.EN_AA, 1 << 0);
+            // enable 1 data pipe
             WriteRegister(Register.EN_RXADDR, 1 << 0);
-            WriteRegister(Register.SETUP_AW, 0b01); // 3 byte address
+            // 3 bytes address
+            WriteRegister(Register.SETUP_AW, 0b01); 
+            // 4ms delay between retransmission (upper half), 15 retransmits (lower half)
             WriteRegister(Register.SETUP_RETR, (0b1111 << 4) | (0b1111 << 4));
+            // 1 RF channel (2401MHz)
             WriteRegister(Register.RF_CH, 1);
+            // 250kbps bit rate, lowest RF output power (-18dBm, ~0.02mW)
             WriteRegister(Register.RF_SETUP, (byte) (RFSetupRegister.RF_DR_LOW | RFSetupRegister.RF_PWR0));
         }
 
@@ -177,7 +189,7 @@ namespace RpiNrf
 
         public void PowerUp()
         {
-            WriteRegister(Register.CONFIG, 1 << 1);
+            WriteRegister(Register.CONFIG, (byte)ConfigRegister.PWR_UP);
         }
 
         private byte[] ReadRegister(Register register, int size)
